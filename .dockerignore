@@ -1,0 +1,41 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tmp
+
+# Git
+.git
+.gitignore
+
+# Node
+node_modules/
+
+# Composer
+vendor/
+
+# Environment
+.env
+.env.*
+
+# Cache
+cache/
+tmp/
+storage/
+
+# Uploads (optional)
+uploads/
+public/uploads/
+assets/uploads/
+
+# Build
+dist/
+build/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.bak
