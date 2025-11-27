@@ -2,17 +2,11 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = "your_dockerhub_username"    // CHANGE THIS
+        DOCKERHUB_USER = "your_dockerhub_username"    
         IMAGE_NAME = "kissankonnect"
     }
 
     stages {
-
-        stage('Checkout Code') {
-            steps {
-                git 'https://github.com/ruchika00/KissanKonnect.git'
-            }
-        }
 
         stage('Build Docker Image') {
             steps {
@@ -46,4 +40,3 @@ pipeline {
 
     }
 }
-
