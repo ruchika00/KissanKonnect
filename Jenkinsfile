@@ -2,21 +2,23 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = "your_dockerhub_username"
+        DOCKERHUB_USER = "your_dockerhub_username"    // CHANGE THIS
         IMAGE_NAME = "kissankonnect"
-        KUBE_CONFIG = credentials('kubeconfig-cred')   // store kubeconfig in Jenkins
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
-                git 'your_repo_url'
+                git 'https://github.com/ruchika00/KissanKonnect.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest .'
+                sh """
+                    docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest .
+                """
             }
         }
 
@@ -24,8 +26,8 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'PASSWORD')]) {
                     sh """
-                    echo $PASSWORD | docker login -u $DOCKERHUB_USER --password-stdin
-                    docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
+                        echo $PASSWORD | docker login -u $DOCKERHUB_USER --password-stdin
+                        docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
                     """
                 }
             }
@@ -35,11 +37,13 @@ pipeline {
             steps {
                 withKubeConfig([credentialsId: 'kubeconfig-cred']) {
                     sh """
-                    kubectl apply -f K8s_deployment.yaml
-                    kubectl apply -f K8s_mysql.yaml
+                        kubectl apply -f K8s_deployment.yaml
+                        kubectl apply -f K8s_mysql.yaml
                     """
                 }
             }
         }
+
     }
 }
+
