@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = "your_dockerhub_username"    
+        DOCKERHUB_USER = "your_dockerhub_username"
         IMAGE_NAME = "kissankonnect"
     }
 
@@ -10,19 +10,23 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                    docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest .
-                """
+                container('dind') {
+                    sh """
+                        docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest .
+                    """
+                }
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'PASSWORD')]) {
-                    sh """
-                        echo $PASSWORD | docker login -u $DOCKERHUB_USER --password-stdin
-                        docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
-                    """
+                container('dind') {
+                    withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'PASSWORD')]) {
+                        sh """
+                            echo $PASSWORD | docker login -u $DOCKERHUB_USER --password-stdin
+                            docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
+                        """
+                    }
                 }
             }
         }
@@ -37,6 +41,6 @@ pipeline {
                 }
             }
         }
-
     }
 }
+
