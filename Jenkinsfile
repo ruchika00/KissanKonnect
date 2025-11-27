@@ -13,13 +13,34 @@ spec:
     command:
     - cat
     tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
     volumeMounts:
     - mountPath: /var/run/docker.sock
       name: dockersock
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+    volumeMounts:
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
   volumes:
   - name: dockersock
     hostPath:
       path: /var/run/docker.sock
+  - name: workspace-volume
+    emptyDir: {}
 '''
         }
     }
