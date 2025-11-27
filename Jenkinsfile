@@ -1,5 +1,28 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            label 'docker-agent'
+            defaultContainer 'jnlp'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: docker
+    image: docker:20.10.16
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - mountPath: /var/run/docker.sock
+      name: dockersock
+  volumes:
+  - name: dockersock
+    hostPath:
+      path: /var/run/docker.sock
+'''
+        }
+    }
 
     environment {
         DOCKERHUB_USER = "ruchika28"
@@ -16,23 +39,27 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                    docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:latest .
-                """
+                container('docker') {
+                    sh """
+                        docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:latest .
+                    """
+                }
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh """
-                        echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                        docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
-                    """
+                container('docker') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                            docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
+                        """
+                    }
                 }
             }
         }
