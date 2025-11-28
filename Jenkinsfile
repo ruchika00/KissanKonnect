@@ -56,7 +56,8 @@ spec:
     }
 
     environment {
-        DOCKERHUB_USER = "ruchika28"
+        NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        NEXUS_PROJECT_PATH = "2401199-project"
         IMAGE_NAME = "kissankonnect"
     }
 
@@ -73,31 +74,42 @@ spec:
                 container('docker') {
                     sh """
                         echo "Building Docker Image..."
-                        docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:latest .
+                        docker build -t ${IMAGE_NAME}:latest .
                     """
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Login to Nexus Docker Registry') {
             steps {
                 container('docker') {
                     withCredentials([usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
+                        credentialsId: 'nexus-docker-creds',
+                        usernameVariable: 'NEXUS_USER',
+                        passwordVariable: 'NEXUS_PASS'
                     )]) {
                         sh """
-                            echo "Logging in to DockerHub..."
-                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-
-                            echo "Tagging image..."
-                            docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKER_USER}/${IMAGE_NAME}:latest
-
-                            echo "Pushing image..."
-                            docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
+                            echo "Logging in to Nexus Docker Registry..."
+                            echo "${NEXUS_PASS}" | docker login ${NEXUS_REGISTRY} -u "${NEXUS_USER}" --password-stdin
                         """
                     }
+                }
+            }
+        }
+
+        stage('Tag and Push to Nexus') {
+            steps {
+                container('docker') {
+                    sh """
+                        echo "Tagging image for Nexus..."
+                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+
+                        echo "Pushing image to Nexus..."
+                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+
+                        echo "Pulling image back to verify..."
+                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+                    """
                 }
             }
         }
@@ -117,3 +129,4 @@ spec:
         }
     }
 }
+
