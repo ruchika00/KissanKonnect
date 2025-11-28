@@ -23,6 +23,7 @@ spec:
     volumeMounts:
     - mountPath: /var/run/docker.sock
       name: dockersock
+
   - name: jnlp
     image: jenkins/inbound-agent:latest
     resources:
@@ -35,6 +36,7 @@ spec:
     volumeMounts:
     - mountPath: /home/jenkins/agent
       name: workspace-volume
+
   volumes:
   - name: dockersock
     hostPath:
@@ -78,11 +80,8 @@ spec:
                     )]) {
                         sh """
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-
-                            # Tag image for push
+                            
                             docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKER_USER}/${IMAGE_NAME}:latest
-
-                            # Push to Docker Hub
                             docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
                         """
                     }
@@ -93,10 +92,11 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 sh """
-                    echo "Deploying to Kubernetes cluster..."
-                    kubectl apply -f deployment.yaml
+                    echo "🔹 Deploying using in-cluster config"
+                    kubectl apply -f K8s_deployment/deployment.yaml
                 """
             }
         }
     }
 }
+
