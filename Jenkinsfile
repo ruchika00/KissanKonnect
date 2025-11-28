@@ -13,29 +13,37 @@ spec:
     command:
     - cat
     tty: true
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: dockersock
+      mountPath: /var/run/docker.sock
     resources:
       requests:
-        memory: "512Mi"
         cpu: "250m"
+        memory: "512Mi"
       limits:
-        memory: "1Gi"
         cpu: "500m"
-    volumeMounts:
-    - mountPath: /var/run/docker.sock
-      name: dockersock
+        memory: "1Gi"
 
   - name: jnlp
     image: jenkins/inbound-agent:latest
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
     resources:
       requests:
-        memory: "512Mi"
         cpu: "250m"
+        memory: "512Mi"
       limits:
-        memory: "1Gi"
         cpu: "500m"
-    volumeMounts:
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
+        memory: "1Gi"
+
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+      - cat
+    tty: true
 
   volumes:
   - name: dockersock
@@ -64,6 +72,7 @@ spec:
             steps {
                 container('docker') {
                     sh """
+                        echo "Building Docker Image..."
                         docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:latest .
                     """
                 }
@@ -79,9 +88,13 @@ spec:
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh """
+                            echo "Logging in to DockerHub..."
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                            
+
+                            echo "Tagging image..."
                             docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKER_USER}/${IMAGE_NAME}:latest
+
+                            echo "Pushing image..."
                             docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
                         """
                     }
@@ -91,12 +104,16 @@ spec:
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh """
-                    echo "🔹 Deploying using in-cluster config"
-                    kubectl apply -f K8s_deployment/deployment.yaml
-                """
+                container('kubectl') {
+                    sh """
+                        echo "Applying Kubernetes Deployment..."
+                        kubectl apply -f K8s_deployment/deployment.yaml
+
+                        echo "Waiting for rollout..."
+                        kubectl rollout status deployment/kissankonnect-deployment -n default || true
+                    """
+                }
             }
         }
     }
 }
-
