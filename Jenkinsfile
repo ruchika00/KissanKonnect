@@ -79,10 +79,10 @@ spec:
                         sh """
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
 
-                            # 🔥 Option 2: Tag before pushing
+                            # Tag image for push
                             docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKER_USER}/${IMAGE_NAME}:latest
 
-                            # Push the correct repo/tag
+                            # Push to Docker Hub
                             docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
                         """
                     }
@@ -92,11 +92,10 @@ spec:
 
         stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-cred', variable: 'KUBECONFIG')]) {
-                    sh """
-                        kubectl --kubeconfig=$KUBECONFIG apply -f deployment.yaml
-                    """
-                }
+                sh """
+                    echo "Deploying to Kubernetes cluster..."
+                    kubectl apply -f deployment.yaml
+                """
             }
         }
     }
