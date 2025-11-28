@@ -115,36 +115,22 @@ spec:
             }
         }
 
-        stage('Login to Nexus Docker Registry') {
+        stage('Login to Docker Registry') {
             steps {
-                container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'nexus-docker-creds',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )]) {
-                        sh '''
-                            echo "Logging in to Nexus Docker Registry..."
-                            echo "$NEXUS_PASS" | docker login ${NEXUS_REGISTRY} -u "$NEXUS_USER" --password-stdin
-                        '''
-                    }
+                container('dind') {
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
                 }
             }
         }
-
-        stage('Tag and Push to Nexus') {
+        stage('Build - Tag - Push') {
             steps {
-                container('docker') {
-                    sh '''
-                        echo "Tagging image for Nexus..."
-                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-
-                        echo "Pushing image to Nexus..."
-                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-
-                        echo "Pulling image back to verify..."
-                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                    '''
+                container('dind') {
+                    sh 'docker tag face-detection:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
+                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
+                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
+                    sh 'docker image ls'
                 }
             }
         }
