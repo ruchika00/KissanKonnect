@@ -89,7 +89,7 @@ spec:
                             sonar-scanner \
                                 -Dsonar.projectKey=2401152_KissanKonnect \
                                 -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                                -Dsonar.login=$SONAR_TOKEN \
+                                -Dsonar.login=sqp_4253752f0458c40c65e583bde12308d9fb61bba9
                                 -Dsonar.sources=. \
                                 -Dsonar.language=php \
                                 -Dsonar.php.coverage.reportPaths=coverage.xml \
