@@ -1,6 +1,7 @@
 pipeline {
     agent {
         kubernetes {
+            // Define the custom Pod with all necessary containers (dind, kubectl, sonar-scanner)
             yaml '''
 apiVersion: v1
 kind: Pod
@@ -21,7 +22,7 @@ spec:
       readOnlyRootFilesystem: false
     env:
     - name: KUBECONFIG
-      value: /kube/config        
+      value: /kube/config
     volumeMounts:
     - name: kubeconfig-secret
       mountPath: /kube/config
@@ -47,89 +48,103 @@ spec:
 '''
         }
     }
-    
-    environment {
-        NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        NEXUS_PROJECT_PATH = "2401199-project"
-        IMAGE_NAME = "kissankonnect"
-        SONAR_PROJECT_KEY = "kissankonnect"
-        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
-    }
 
     stages {
+        // --- 1. Build Docker Image (Using dind container) ---
         stage('Build Docker Image') {
             steps {
                 container('dind') {
                     sh '''
                         sleep 15
-                        docker build -t ${IMAGE_NAME}:latest .
+                        # Build the Docker image for your PHP application
+                        docker build -t kissankonnect:latest .
                         docker image ls
                     '''
                 }
             }
         }
-
-        stage('Run Tests in Docker') {
+        
+        // --- 2. Run Tests in Docker (Assuming PHPUnit, coverage XML output) ---
+        stage('Run Unit Tests (PHP)') {
             steps {
                 container('dind') {
-                    // Assuming you have tests and pytest configured, otherwise skip or replace
                     sh '''
-                        docker run --rm ${IMAGE_NAME}:latest \
-                        pytest --maxfail=1 --disable-warnings --cov=. --cov-report=xml || true
+                        # Run tests inside the built image container
+                        # This command assumes PHPUnit is installed and configured to output a coverage.xml
+                        # You may need to adjust this command based on your specific PHP setup (e.g., entrypoint/command)
+                        docker run --rm -v $(pwd):/app -w /app kissankonnect:latest \
+                        vendor/bin/phpunit --coverage-clover coverage.xml
                     '''
                 }
             }
         }
-
+        
+        // --- 3. SonarQube Analysis (Using sonar-scanner container) ---
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
+                     // NOTE: Update 'sonar-token-2401199' to your specific credentialsId if different
                     withCredentials([string(credentialsId: 'sonar-token-2401199', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.login=$SONAR_TOKEN \
-                            -Dsonar.python.coverage.reportPaths=coverage.xml
+                                -Dsonar.projectKey=2401152_KissanKonnect \
+                                -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+                                -Dsonar.login=$SONAR_TOKEN \
+                                -Dsonar.sources=. \
+                                -Dsonar.language=php \
+                                -Dsonar.php.coverage.reportPaths=coverage.xml \
+                                -Dsonar.projectName=KissanKonnect-2401152
                         '''
                     }
                 }
             }
         }
-
+        
+        // --- 4. Login to Docker Registry (Using dind container) ---
         stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    sh '''
-                        docker --version
-                        sleep 10
-                        docker login ${NEXUS_REGISTRY} -u admin -p Changeme@2025
-                    '''
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    // NOTE: Update the registry URL and credentials if they are different
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
                 }
             }
         }
-
+        
+        // --- 5. Tag and Push Image (Using dind container) ---
         stage('Build - Tag - Push') {
+            environment {
+                // Use your Roll No and Project Name for the tag
+                IMAGE_TAG = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissankonnect:latest"
+            }
             steps {
                 container('dind') {
-                    sh '''
-                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                        docker image ls
-                    '''
+                    // Tag the locally built image with the full registry path
+                    sh "docker tag kissankonnect:latest ${env.IMAGE_TAG}"
+                    // Push to the Nexus Docker Registry
+                    sh "docker push ${env.IMAGE_TAG}"
+                    // Verify the image was pushed (optional: pull it back)
+                    sh "docker pull ${env.IMAGE_TAG}"
+                    sh 'docker image ls'
                 }
             }
         }
-
-        stage('Deploy Application') {
+        
+        // --- 6. Deploy Application to Kubernetes (Using kubectl container) ---
+        stage('Deploy KissanKonnect') {
             steps {
                 container('kubectl') {
                     script {
+                        // Ensure the k8s-deployment directory exists in your repo
                         dir('k8s-deployment') {
                             sh '''
-                                kubectl apply -f kissankonnect-deployment.yaml
-                                kubectl rollout status deployment/kissankonnect-deployment -n 2401152
+                                # Apply all resources in the deployment YAML
+                                # Make sure your YAML uses the image tag from the previous stage
+                                kubectl apply -f kissan-konnect-deployment.yaml
+
+                                # Wait for rollout to complete in your namespace (e.g., 2401152)
+                                kubectl rollout status deployment/kissan-konnect-deployment -n 2401152
                             '''
                         }
                     }
