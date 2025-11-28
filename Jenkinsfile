@@ -8,37 +8,26 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: docker
-    image: docker:20.10.16
-    command:
-    - cat
-    tty: true
+  - name: dind
+    image: docker:dind
     securityContext:
       privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    command:
+    - dockerd-entrypoint.sh
+    args:
+    - --host=tcp://0.0.0.0:2375
+    - --host=unix:///var/run/docker.sock
     volumeMounts:
     - name: dockersock
       mountPath: /var/run/docker.sock
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-
   - name: jnlp
     image: jenkins/inbound-agent:latest
     volumeMounts:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-
   - name: kubectl
     image: bitnami/kubectl:latest
     command:
@@ -70,10 +59,11 @@ spec:
 
         stage('Build Docker Image') {
             steps {
-                container('docker') {
+                container('dind') {
                     sh '''
-                        echo "Building Docker Image..."
+                        echo "Building Docker image for PHP project..."
                         docker build -t ${IMAGE_NAME}:latest .
+                        docker image ls
                     '''
                 }
             }
@@ -81,7 +71,7 @@ spec:
 
         stage('Login to Nexus Docker Registry') {
             steps {
-                container('docker') {
+                container('dind') {
                     withCredentials([usernamePassword(
                         credentialsId: 'nexus-docker-creds',
                         usernameVariable: 'NEXUS_USER',
@@ -89,25 +79,41 @@ spec:
                     )]) {
                         sh '''
                             echo "Logging in to Nexus Docker Registry..."
-                            echo '${NEXUS_PASS}' | docker login ${NEXUS_REGISTRY} -u '${NEXUS_USER}' --password-stdin
+                            echo "${NEXUS_PASS}" | docker login ${NEXUS_REGISTRY} -u "${NEXUS_USER}" --password-stdin
                         '''
                     }
                 }
             }
         }
 
-        stage('Tag and Push to Nexus') {
+        stage('Tag and Push Docker Image') {
             steps {
-                container('docker') {
+                container('dind') {
                     sh '''
-                        echo "Tagging image for Nexus..."
+                        echo "Tagging image with build number and latest tag..."
+                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}
                         docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
 
-                        echo "Pushing image to Nexus..."
+                        echo "Pushing both tags to Nexus registry..."
+                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}
                         docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+                    '''
+                }
+            }
+        }
 
-                        echo "Pulling image back to verify..."
-                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+        stage('Create Kubernetes Namespace and Secret') {
+            steps {
+                container('kubectl') {
+                    sh '''
+                        kubectl get namespace 2401199 || kubectl create namespace 2401199
+
+                        kubectl create secret docker-registry nexus-secret \
+                          --docker-server=${NEXUS_REGISTRY} \
+                          --docker-username=${NEXUS_USER} \
+                          --docker-password=${NEXUS_PASS} \
+                          --namespace=2401199 \
+                          --dry-run=client -o yaml | kubectl apply -f -
                     '''
                 }
             }
@@ -116,15 +122,19 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    sh '''
-                        echo "Applying Kubernetes Deployment..."
-                        kubectl apply -f K8s_deployment/deployment.yaml
+                    dir('K8s_deployment') {
+                        sh '''
+                            # Replace image tag in deployment.yaml with the new build number
+                            sed -i "s|image: .*/${IMAGE_NAME}:.*|image: ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
 
-                        echo "Waiting for rollout..."
-                        kubectl rollout status deployment/kissankonnect-deployment -n default || true
-                    '''
+                            kubectl apply -f deployment.yaml -n 2401199
+
+                            kubectl rollout status deployment/kissankonnect-deployment -n 2401199
+                        '''
+                    }
                 }
             }
         }
     }
 }
+
