@@ -62,6 +62,7 @@ spec:
     }
 
     environment {
+        // Verify this URL and namespace is correct for your Nexus service
         NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         NEXUS_PROJECT_PATH = "2401199-project"
         IMAGE_NAME = "kissankonnect"
@@ -79,13 +80,13 @@ spec:
             steps {
                 container('sonar-scanner') {
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh """
+                        sh '''
                             sonar-scanner \
                               -Dsonar.projectKey=kissankonnect \
                               -Dsonar.sources=. \
                               -Dsonar.host.url=${SONAR_HOST_URL} \
                               -Dsonar.login=${SONAR_TOKEN}
-                        """
+                        '''
                     }
                 }
             }
@@ -103,6 +104,17 @@ spec:
             }
         }
 
+        stage('Check Nexus DNS') {
+            steps {
+                container('docker') {
+                    sh '''
+                        echo "Checking Nexus DNS resolution..."
+                        nslookup ${NEXUS_REGISTRY%:*} || true
+                    '''
+                }
+            }
+        }
+
         stage('Login to Nexus Docker Registry') {
             steps {
                 container('docker') {
@@ -113,7 +125,7 @@ spec:
                     )]) {
                         sh '''
                             echo "Logging in to Nexus Docker Registry..."
-                            echo "${NEXUS_PASS}" | docker login ${NEXUS_REGISTRY} -u "${NEXUS_USER}" --password-stdin
+                            echo "$NEXUS_PASS" | docker login ${NEXUS_REGISTRY} -u "$NEXUS_USER" --password-stdin
                         '''
                     }
                 }
@@ -152,5 +164,6 @@ spec:
         }
     }
 }
+
 
 
