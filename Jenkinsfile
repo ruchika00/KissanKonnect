@@ -62,7 +62,6 @@ spec:
     }
 
     environment {
-        // Verify this URL and namespace is correct for your Nexus service
         NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         NEXUS_PROJECT_PATH = "2401199-project"
         IMAGE_NAME = "kissankonnect"
@@ -117,20 +116,23 @@ spec:
 
         stage('Login to Docker Registry') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh 'docker --version'
                     sh 'sleep 10'
-                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
+                    sh 'docker login ${NEXUS_REGISTRY} -u admin -p Changeme@2025'
                 }
             }
         }
+
         stage('Build - Tag - Push') {
             steps {
-                container('dind') {
-                    sh 'docker tag face-detection:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
-                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
-                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissan-konnect:latest'
-                    sh 'docker image ls'
+                container('docker') {
+                    sh '''
+                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
+                        docker image ls
+                    '''
                 }
             }
         }
@@ -150,6 +152,7 @@ spec:
         }
     }
 }
+
 
 
 
