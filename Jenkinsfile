@@ -2,32 +2,49 @@ pipeline {
     agent {
         kubernetes {
             label 'docker-agent'
-            defaultContainer 'jnlp'
+            defaultContainer 'docker'
             yaml '''
 apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: dind
-    image: docker:dind
+  - name: docker
+    image: docker:20.10.16
+    command:
+    - cat
+    tty: true
     securityContext:
       privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
-    command:
-    - dockerd-entrypoint.sh
-    args:
-    - --host=tcp://0.0.0.0:2375
-    - --host=unix:///var/run/docker.sock
     volumeMounts:
     - name: dockersock
       mountPath: /var/run/docker.sock
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli
+    command:
+    - cat
+    tty: true
+
   - name: jnlp
     image: jenkins/inbound-agent:latest
     volumeMounts:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+
   - name: kubectl
     image: bitnami/kubectl:latest
     command:
@@ -48,6 +65,7 @@ spec:
         NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         NEXUS_PROJECT_PATH = "2401199-project"
         IMAGE_NAME = "kissankonnect"
+        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
     }
 
     stages {
@@ -57,11 +75,27 @@ spec:
             }
         }
 
+        stage('SonarQube Scan') {
+            steps {
+                container('sonar-scanner') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh """
+                            sonar-scanner \
+                              -Dsonar.projectKey=kissankonnect \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=${SONAR_HOST_URL} \
+                              -Dsonar.login=${SONAR_TOKEN}
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh '''
-                        echo "Building Docker image for PHP project..."
+                        echo "Building Docker Image..."
                         docker build -t ${IMAGE_NAME}:latest .
                         docker image ls
                     '''
@@ -71,7 +105,7 @@ spec:
 
         stage('Login to Nexus Docker Registry') {
             steps {
-                container('dind') {
+                container('docker') {
                     withCredentials([usernamePassword(
                         credentialsId: 'nexus-docker-creds',
                         usernameVariable: 'NEXUS_USER',
@@ -86,34 +120,18 @@ spec:
             }
         }
 
-        stage('Tag and Push Docker Image') {
+        stage('Tag and Push to Nexus') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh '''
-                        echo "Tagging image with build number and latest tag..."
-                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        echo "Tagging image for Nexus..."
                         docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
 
-                        echo "Pushing both tags to Nexus registry..."
-                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        echo "Pushing image to Nexus..."
                         docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                    '''
-                }
-            }
-        }
 
-        stage('Create Kubernetes Namespace and Secret') {
-            steps {
-                container('kubectl') {
-                    sh '''
-                        kubectl get namespace 2401199 || kubectl create namespace 2401199
-
-                        kubectl create secret docker-registry nexus-secret \
-                          --docker-server=${NEXUS_REGISTRY} \
-                          --docker-username=${NEXUS_USER} \
-                          --docker-password=${NEXUS_PASS} \
-                          --namespace=2401199 \
-                          --dry-run=client -o yaml | kubectl apply -f -
+                        echo "Pulling image back to verify..."
+                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
                     '''
                 }
             }
@@ -122,19 +140,17 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    dir('K8s_deployment') {
-                        sh '''
-                            # Replace image tag in deployment.yaml with the new build number
-                            sed -i "s|image: .*/${IMAGE_NAME}:.*|image: ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
+                    sh '''
+                        echo "Applying Kubernetes Deployment..."
+                        kubectl apply -f K8s_deployment/deployment.yaml
 
-                            kubectl apply -f deployment.yaml -n 2401199
-
-                            kubectl rollout status deployment/kissankonnect-deployment -n 2401199
-                        '''
-                    }
+                        echo "Waiting for rollout..."
+                        kubectl rollout status deployment/kissankonnect-deployment -n default || true
+                    '''
                 }
             }
         }
     }
 }
+
 
