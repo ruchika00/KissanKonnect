@@ -78,6 +78,11 @@ spec:
                     )]) {
                         sh """
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+
+                            # 🔥 Option 2: Tag before pushing
+                            docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKER_USER}/${IMAGE_NAME}:latest
+
+                            # Push the correct repo/tag
                             docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
                         """
                     }
