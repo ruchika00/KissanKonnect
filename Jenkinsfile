@@ -1,132 +1,109 @@
-pipeline {
-    agent {
-        kubernetes {
-            label 'docker-agent'
-            defaultContainer 'jnlp'
-            yaml '''
+# -------------------------------
+# PersistentVolumeClaim
+# -------------------------------
 apiVersion: v1
-kind: Pod
+kind: PersistentVolumeClaim
+metadata:
+  name: recipe-static-pvc
+  namespace: "2401063"
 spec:
-  containers:
-  - name: docker
-    image: docker:20.10.16
-    command:
-    - cat
-    tty: true
-    securityContext:
-      privileged: true
-    volumeMounts:
-    - name: dockersock
-      mountPath: /var/run/docker.sock
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recipe-finder-deployment
+  namespace: "2401063"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recipe-finder
+  template:
+    metadata:
+      labels:
+        app: recipe-finder
+    spec:
+      imagePullSecrets:
+        - name: nexus-secret
+      containers:
+        - name: recipe-finder
+          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401063/recipe-finder:latest
+          imagePullPolicy: Always
 
-  - name: jnlp
-    image: jenkins/inbound-agent:latest
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
+          ports:
+            - containerPort: 80
 
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command:
-      - cat
-    tty: true
+          env:
+            - name: VITE_API_KEY
+              value: "cc61bff714d14ffe98913e198a562acf"
 
-  volumes:
-  - name: dockersock
-    hostPath:
-      path: /var/run/docker.sock
-  - name: workspace-volume
-    emptyDir: {}
-'''
-        }
-    }
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
 
-    environment {
-        NEXUS_REGISTRY = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        NEXUS_PROJECT_PATH = "2401199-project"
-        IMAGE_NAME = "kissankonnect"
-    }
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
 
-    stages {
+          volumeMounts:
+            - name: recipe-static
+              mountPath: /usr/share/nginx/html
 
-        stage('Checkout Code') {
-            steps {
-                git branch: 'main', url: 'https://github.com/ruchika00/KissanKonnect.git'
-            }
-        }
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
 
-        stage('Build Docker Image') {
-            steps {
-                container('docker') {
-                    sh """
-                        echo "Building Docker Image..."
-                        docker build -t ${IMAGE_NAME}:latest .
-                    """
-                }
-            }
-        }
-
-        stage('Login to Nexus Docker Registry') {
-            steps {
-                container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'nexus-docker-creds',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )]) {
-                        sh """
-                            echo "Logging in to Nexus Docker Registry..."
-                            echo "${NEXUS_PASS}" | docker login ${NEXUS_REGISTRY} -u "${NEXUS_USER}" --password-stdin
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Tag and Push to Nexus') {
-            steps {
-                container('docker') {
-                    sh """
-                        echo "Tagging image for Nexus..."
-                        docker tag ${IMAGE_NAME}:latest ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-
-                        echo "Pushing image to Nexus..."
-                        docker push ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-
-                        echo "Pulling image back to verify..."
-                        docker pull ${NEXUS_REGISTRY}/${NEXUS_PROJECT_PATH}/${IMAGE_NAME}:latest
-                    """
-                }
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                container('kubectl') {
-                    sh """
-                        echo "Applying Kubernetes Deployment..."
-                        kubectl apply -f K8s_deployment/deployment.yaml
-
-                        echo "Waiting for rollout..."
-                        kubectl rollout status deployment/kissankonnect-deployment -n default || true
-                    """
-                }
-            }
-        }
-    }
-}
-
+      volumes:
+        - name: recipe-static
+          persistentVolumeClaim:
+            claimName: recipe-static-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recipe-finder-service
+  namespace: "2401063"
+spec:
+  selector:
+    app: recipe-finder
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recipe-finder-ingress
+  namespace: "2401063"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: 2401063.imcc.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: recipe-finder-service
+                port:
+                  number: 80
