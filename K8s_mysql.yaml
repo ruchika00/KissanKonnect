@@ -26,8 +26,7 @@ spec:
               mountPath: /var/lib/mysql
       volumes:
         - name: mysql-storage
-          emptyDir: {}
-
+          emptyDir: {}   # temp storage; OK for college cluster
 ---
 apiVersion: v1
 kind: Service
