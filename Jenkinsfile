@@ -10,7 +10,8 @@ spec:
   containers:
   - name: docker
     image: docker:24.0
-    command: ["cat"]
+    command:
+    - cat
     tty: true
     volumeMounts:
     - mountPath: /var/run/docker.sock
@@ -24,20 +25,23 @@ spec:
     }
 
     environment {
-        REGISTRY_URL = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        REPO_NAME    = "2401152"                       // your roll number repo
-        IMAGE_NAME   = "kissankonnect"                 // your project image
-        K8S_DEPLOYMENT = "kissankonnect-web"           
-        K8S_NAMESPACE = "default"
+        REGISTRY_URL = "127.0.0.1:30085"       // Nexus IP with port accessible by Jenkins agent
+        REPO_NAME    = "2401152"               // Your Nexus repository name, confirm exact repo name
+        IMAGE_NAME   = "kissankonnect"         // Your image name
+        K8S_DEPLOYMENT = "kissankonnect-web"  // Kubernetes deployment name
+        K8S_NAMESPACE  = "default"             // Namespace where app is deployed
+        NEXUS_USERNAME = credentials('nexus-username')  // Store these credentials in Jenkins Credentials Manager
+        NEXUS_PASSWORD = credentials('nexus-password')
     }
 
     stages {
-
         stage('Clean') {
-            steps { cleanWs() }
+            steps {
+                cleanWs()
+            }
         }
 
-        stage('Checkout Source Code') {
+        stage('Checkout') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/ruchika00/KissanKonnect.git'
@@ -66,9 +70,11 @@ spec:
             }
         }
 
-        stage('Push Image to Nexus') {
+        stage('Push Image') {
             steps {
-                sh "docker push ${FULL_IMAGE}"
+                script {
+                    sh "docker push ${FULL_IMAGE}"
+                }
             }
         }
 
@@ -77,8 +83,7 @@ spec:
                 script {
                     sh """
                         kubectl set image deployment/${K8S_DEPLOYMENT} \
-                        kissankonnect-web=${FULL_IMAGE} \
-                        -n ${K8S_NAMESPACE}
+                        web=${FULL_IMAGE} -n ${K8S_NAMESPACE}
                     """
                 }
             }
@@ -86,7 +91,11 @@ spec:
     }
 
     post {
-        success { echo "🎉 Deployment successful!" }
-        failure { echo "❌ Build failed!" }
+        success {
+            echo "Deployment successful!"
+        }
+        failure {
+            echo "Build failed!"
+        }
     }
 }
