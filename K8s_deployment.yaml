@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: your_dockerhub_username/kissankonnect:latest
+          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152/kissankonnect:v1
           ports:
             - containerPort: 80
           env:
@@ -39,3 +39,4 @@ spec:
     - port: 80
       targetPort: 80
       nodePort: 30080
+
