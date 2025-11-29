@@ -1,85 +1,102 @@
+
+
 pipeline {
     agent {
         kubernetes {
-            yaml """
+            label 'docker-agent'
+            defaultContainer 'docker'
+            yaml '''
 apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: kaniko
-    image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/kaniko-project/executor:latest
-    args: ["--storage-driver=vfs"]
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker/
-  - name: kubectl
-    image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/kubectl:1.28
-    command: ['cat']
+  - name: docker
+    image: docker:24.0
+    command:
+    - cat
     tty: true
     volumeMounts:
-    - name: kubeconfig
-      mountPath: /kube
-  - name: sonar
-    image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/alpine:latest
-    command: ['cat']
-    tty: true
+    - mountPath: /var/run/docker.sock
+      name: dockersock
   volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: regcred
-  - name: kubeconfig
-    secret:
-      secretName: kubeconfig-secret
-"""
+  - name: dockersock
+    hostPath:
+      path: /var/run/docker.sock
+'''
         }
     }
 
     environment {
-        IMAGE = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152-project/kissankonnect:latest"
+        REGISTRY_URL = "http://<NEXUS-IP>:8082"          // Replace with college Nexus IP
+        REPO_NAME = "kissan-konnect"                     // Nexus repository name
+        IMAGE_NAME = "kissan-konnect-2401152"            // Roll no added
+        K8S_DEPLOYMENT = "kissan-konnect-deployment"
+        K8S_NAMESPACE = "default"
     }
 
     stages {
 
-        stage('SonarQube Analysis') {
+        stage('Clean') {
             steps {
-                container('sonar') {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/ruchika00/KissanKonnect.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    IMAGE_TAG = env.BUILD_NUMBER
+                    FULL_IMAGE = "${REGISTRY_URL}/${REPO_NAME}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+                    sh "docker build -t ${FULL_IMAGE} ."
+                }
+            }
+        }
+
+        stage('Login to Nexus Registry') {
+            steps {
+                script {
                     sh """
-                        apk add curl unzip openjdk11
-                        curl -o scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.zip
-                        unzip scanner.zip
-                        sonar-scanner-*/bin/sonar-scanner \
-                            -Dsonar.projectKey=2401152_KissanKonnect \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                            -Dsonar.login=sqp_4253752f0458c40c65e583bde12308d9fb61bba9
+                       echo "${NEXUS_PASSWORD}" | docker login ${REGISTRY_URL} \
+                       -u ${NEXUS_USERNAME} --password-stdin
                     """
                 }
             }
         }
 
-        stage('Build Image with Kaniko') {
+        stage('Push Image') {
             steps {
-                container('kaniko') {
-                    sh """
-                        /kaniko/executor \
-                            --context `pwd` \
-                            --dockerfile Dockerfile \
-                            --destination ${IMAGE}
-                    """
+                script {
+                    sh "docker push ${FULL_IMAGE}"
                 }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                container('kubectl') {
+                script {
                     sh """
-                        kubectl --kubeconfig /kube/config apply -f k8s-deployment/kissan-konnect-deployment.yaml
-                        kubectl --kubeconfig /kube/config rollout status deployment/kissan-konnect-deployment -n 2401152
+                        kubectl set image deployment/${K8S_DEPLOYMENT} \
+                        php-container=${FULL_IMAGE} -n ${K8S_NAMESPACE}
                     """
                 }
             }
         }
     }
-}
 
+    post {
+        success {
+            echo "Deployment successful!"
+        }
+        failure {
+            echo "Build failed!"
+        }
+    }
+}
