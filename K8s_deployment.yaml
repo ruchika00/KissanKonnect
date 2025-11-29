@@ -13,20 +13,19 @@ spec:
         app: kissankonnect-web
     spec:
       containers:
-        - name: kissankonnect-web
-          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152/kissankonnect:v1
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 80
-          env:
-            - name: DB_HOST
-              value: "mysql-service"
-            - name: DB_USER
-              value: "root"
-            - name: DB_PASS
-              value: "root"
-            - name: DB_NAME
-              value: "kissankonnect"
+      - name: web
+        image: 127.0.0.1:30085/2401152/kissankonnect:v1   # Update v1 tag with your pushed image tag
+        ports:
+        - containerPort: 80
+        env:
+        - name: DB_HOST
+          value: "mysql-service"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASS
+          value: "root"
+        - name: DB_NAME
+          value: "kissankonnect"
 ---
 apiVersion: v1
 kind: Service
@@ -37,6 +36,6 @@ spec:
   selector:
     app: kissankonnect-web
   ports:
-    - port: 80
-      targetPort: 80
-      nodePort: 30080
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
