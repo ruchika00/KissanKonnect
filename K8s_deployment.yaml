@@ -13,8 +13,9 @@ spec:
         app: kissankonnect-web
     spec:
       containers:
-        - name: web
+        - name: kissankonnect-web
           image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401152/kissankonnect:v1
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           env:
@@ -39,4 +40,3 @@ spec:
     - port: 80
       targetPort: 80
       nodePort: 30080
-
