@@ -1,5 +1,3 @@
-
-
 pipeline {
     agent {
         kubernetes {
@@ -12,8 +10,7 @@ spec:
   containers:
   - name: docker
     image: docker:24.0
-    command:
-    - cat
+    command: ["cat"]
     tty: true
     volumeMounts:
     - mountPath: /var/run/docker.sock
@@ -27,22 +24,20 @@ spec:
     }
 
     environment {
-        REGISTRY_URL = "http://<NEXUS-IP>:8082"          // Replace with college Nexus IP
-        REPO_NAME = "kissan-konnect"                     // Nexus repository name
-        IMAGE_NAME = "kissan-konnect-2401152"            // Roll no added
-        K8S_DEPLOYMENT = "kissan-konnect-deployment"
+        REGISTRY_URL = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REPO_NAME    = "2401152"                       // your roll number repo
+        IMAGE_NAME   = "kissankonnect"                 // your project image
+        K8S_DEPLOYMENT = "kissankonnect-web"           
         K8S_NAMESPACE = "default"
     }
 
     stages {
 
         stage('Clean') {
-            steps {
-                cleanWs()
-            }
+            steps { cleanWs() }
         }
 
-        stage('Checkout') {
+        stage('Checkout Source Code') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/ruchika00/KissanKonnect.git'
@@ -71,11 +66,9 @@ spec:
             }
         }
 
-        stage('Push Image') {
+        stage('Push Image to Nexus') {
             steps {
-                script {
-                    sh "docker push ${FULL_IMAGE}"
-                }
+                sh "docker push ${FULL_IMAGE}"
             }
         }
 
@@ -84,7 +77,8 @@ spec:
                 script {
                     sh """
                         kubectl set image deployment/${K8S_DEPLOYMENT} \
-                        php-container=${FULL_IMAGE} -n ${K8S_NAMESPACE}
+                        kissankonnect-web=${FULL_IMAGE} \
+                        -n ${K8S_NAMESPACE}
                     """
                 }
             }
@@ -92,11 +86,7 @@ spec:
     }
 
     post {
-        success {
-            echo "Deployment successful!"
-        }
-        failure {
-            echo "Build failed!"
-        }
+        success { echo "🎉 Deployment successful!" }
+        failure { echo "❌ Build failed!" }
     }
 }
